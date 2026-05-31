@@ -12,10 +12,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const usuarioRoutes = require('./routes/usuarioRoutes');
 const productoRoutes = require('./routes/productoRoutes');
 const ventaRoutes = require('./routes/ventaRoutes');
+const respaldoRoutes = require('./routes/respaldoRoutes');
 
 // Usar rutas
 app.use('/', usuarioRoutes);
 app.use('/', productoRoutes);
 app.use('/', ventaRoutes);
+app.use('/', respaldoRoutes);
 
 app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));

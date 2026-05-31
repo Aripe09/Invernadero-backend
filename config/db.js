@@ -1,4 +1,27 @@
 const mysql = require('mysql2');
+const fs = require('fs');
+const path = require('path');
+
+const envPath = path.join(__dirname, '..', '.env');
+
+if (fs.existsSync(envPath)) {
+    const envFile = fs.readFileSync(envPath, 'utf8');
+
+    envFile.split(/\r?\n/).forEach((line) => {
+        const cleanLine = line.trim();
+        if (!cleanLine || cleanLine.startsWith('#')) return;
+
+        const separatorIndex = cleanLine.indexOf('=');
+        if (separatorIndex === -1) return;
+
+        const key = cleanLine.slice(0, separatorIndex).trim();
+        const value = cleanLine.slice(separatorIndex + 1).trim();
+
+        if (key && process.env[key] === undefined) {
+            process.env[key] = value;
+        }
+    });
+}
 
 const db = mysql.createConnection({
     host: process.env.DB_HOST || 'localhost',
