@@ -5,7 +5,7 @@ const db = require('../config/db');
 // Login
 const login = (req, res) => {
     const { username, password } = req.body;
-    db.query('SELECT id_usuario, nombre, rol FROM usuarios WHERE username = ? AND password = ? AND activo = 1', [username, password], (err, results) => {
+    db.query('SELECT id_usuario, nombre, rol FROM usuarios WHERE username = ? AND password = ? AND activo = ?', [username, password, db.bool(true)], (err, results) => {
         if (err) return res.status(500).json(err);
         if (results.length > 0) res.json({ usuario: results[0] });
         else res.status(401).json({ error: "Usuario o contraseña incorrectos, o usuario inactivo" });
@@ -15,7 +15,7 @@ const login = (req, res) => {
 // Registrar usuario
 const registrarUsuario = (req, res) => {
     const { nombre, username, password, rol } = req.body;
-    db.query('INSERT INTO usuarios (nombre, username, password, rol, activo) VALUES (?, ?, ?, ?, 1)', [nombre, username, password, rol], (err) => {
+    db.query('INSERT INTO usuarios (nombre, username, password, rol, activo) VALUES (?, ?, ?, ?, ?)', [nombre, username, password, rol, db.bool(true)], (err) => {
         if (err) return res.status(500).json(err);
         res.json({ mensaje: "Usuario creado" });
     });
@@ -43,7 +43,7 @@ const getUsuarios = (req, res) => {
 // Dar de baja un usuario (soft delete)
 const desactivarUsuario = (req, res) => {
     const { id } = req.params;
-    db.query('UPDATE usuarios SET activo = 0 WHERE id_usuario = ?', [id], (err) => {
+    db.query('UPDATE usuarios SET activo = ? WHERE id_usuario = ?', [db.bool(false), id], (err) => {
         if (err) return res.status(500).json(err);
         res.json({ mensaje: "Usuario dado de baja correctamente" });
     });
@@ -52,7 +52,7 @@ const desactivarUsuario = (req, res) => {
 // Reactivar un usuario
 const activarUsuario = (req, res) => {
     const { id } = req.params;
-    db.query('UPDATE usuarios SET activo = 1 WHERE id_usuario = ?', [id], (err) => {
+    db.query('UPDATE usuarios SET activo = ? WHERE id_usuario = ?', [db.bool(true), id], (err) => {
         if (err) return res.status(500).json(err);
         res.json({ mensaje: "Usuario reactivado correctamente" });
     });

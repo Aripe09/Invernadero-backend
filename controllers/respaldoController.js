@@ -1,6 +1,17 @@
 const db = require('../config/db');
 
 const TABLAS_RESPALDO = ['categorias', 'usuarios', 'productos', 'ventas', 'detalle_ventas'];
+const COLUMNAS_BOOLEANAS = {
+    usuarios: ['activo']
+};
+
+const LLAVES_PRIMARIAS = {
+    categorias: 'id_categoria',
+    usuarios: 'id_usuario',
+    productos: 'id_producto',
+    ventas: 'id_venta',
+    detalle_ventas: 'id_detalle'
+};
 
 const esquemaMySQL = `CREATE TABLE IF NOT EXISTS categorias (
   id_categoria INT AUTO_INCREMENT PRIMARY KEY,
@@ -25,7 +36,8 @@ CREATE TABLE IF NOT EXISTS productos (
   tamano VARCHAR(50),
   imagen_url TEXT,
   id_categoria INT,
-  descripcion TEXT
+  descripcion TEXT,
+  fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS ventas (
@@ -46,6 +58,14 @@ CREATE TABLE IF NOT EXISTS detalle_ventas (
   cantidad INT NOT NULL,
   precio_unitario DECIMAL(10,2) NOT NULL
 );`;
+
+const limpiarMySQL = `SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS detalle_ventas;
+DROP TABLE IF EXISTS ventas;
+DROP TABLE IF EXISTS productos;
+DROP TABLE IF EXISTS usuarios;
+DROP TABLE IF EXISTS categorias;
+SET FOREIGN_KEY_CHECKS = 1;`;
 
 const esquemaPostgreSQL = `CREATE TABLE IF NOT EXISTS categorias (
   id_categoria SERIAL PRIMARY KEY,
@@ -70,7 +90,8 @@ CREATE TABLE IF NOT EXISTS productos (
   tamano VARCHAR(50),
   imagen_url TEXT,
   id_categoria INTEGER,
-  descripcion TEXT
+  descripcion TEXT,
+  fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS ventas (
@@ -91,6 +112,18 @@ CREATE TABLE IF NOT EXISTS detalle_ventas (
   cantidad INTEGER NOT NULL,
   precio_unitario NUMERIC(10,2) NOT NULL
 );`;
+
+const limpiarPostgreSQL = `DROP TABLE IF EXISTS detalle_ventas CASCADE;
+DROP TABLE IF EXISTS ventas CASCADE;
+DROP TABLE IF EXISTS productos CASCADE;
+DROP TABLE IF EXISTS usuarios CASCADE;
+DROP TABLE IF EXISTS categorias CASCADE;`;
+
+const reiniciarSecuenciasPostgreSQL = `SELECT setval(pg_get_serial_sequence('categorias', 'id_categoria'), COALESCE((SELECT MAX(id_categoria) FROM categorias), 1), true);
+SELECT setval(pg_get_serial_sequence('usuarios', 'id_usuario'), COALESCE((SELECT MAX(id_usuario) FROM usuarios), 1), true);
+SELECT setval(pg_get_serial_sequence('productos', 'id_producto'), COALESCE((SELECT MAX(id_producto) FROM productos), 1), true);
+SELECT setval(pg_get_serial_sequence('ventas', 'id_venta'), COALESCE((SELECT MAX(id_venta) FROM ventas), 1), true);
+SELECT setval(pg_get_serial_sequence('detalle_ventas', 'id_detalle'), COALESCE((SELECT MAX(id_detalle) FROM detalle_ventas), 1), true);`;
 
 const query = (sql, params = []) => {
     return new Promise((resolve, reject) => {
@@ -117,8 +150,15 @@ const obtenerDatos = async () => {
     return { datos, errores };
 };
 
-const valorSQL = (valor, tipo) => {
+const esColumnaBooleana = (tabla, columna) => {
+    return COLUMNAS_BOOLEANAS[tabla]?.includes(columna);
+};
+
+const valorSQL = (valor, tipo, tabla, columna) => {
     if (valor === null || valor === undefined) return 'NULL';
+    if (tipo === 'postgres' && esColumnaBooleana(tabla, columna)) {
+        return valor === true || valor === 1 || valor === '1' ? 'TRUE::boolean' : 'FALSE::boolean';
+    }
     if (valor instanceof Date) return `'${valor.toISOString().slice(0, 19).replace('T', ' ')}'`;
     if (typeof valor === 'number') return String(valor);
     if (typeof valor === 'boolean') {
@@ -143,21 +183,31 @@ const generarInsert = (tabla, filas, tipo) => {
     return filas.map((fila) => {
         const columnas = Object.keys(fila);
         const columnasSQL = columnas.map((columna) => columnaSQL(columna, tipo)).join(', ');
-        const valoresSQL = columnas.map((columna) => valorSQL(fila[columna], tipo)).join(', ');
+        const valoresSQL = columnas.map((columna) => valorSQL(fila[columna], tipo, tabla, columna)).join(', ');
+        const insertBase = `INSERT INTO ${tablaSQL(tabla, tipo)} (${columnasSQL}) VALUES (${valoresSQL})`;
 
-        return `INSERT INTO ${tablaSQL(tabla, tipo)} (${columnasSQL}) VALUES (${valoresSQL});`;
+        if (tipo !== 'postgres') {
+            return `${insertBase};`;
+        }
+
+        const llavePrimaria = LLAVES_PRIMARIAS[tabla];
+        return `${insertBase} ON CONFLICT (${columnaSQL(llavePrimaria, tipo)}) DO NOTHING;`;
     }).join('\n');
 };
 
 const generarSQL = ({ datos, errores }, tipo) => {
     const fecha = new Date().toISOString();
     const esquema = tipo === 'postgres' ? esquemaPostgreSQL : esquemaMySQL;
+    const limpieza = tipo === 'postgres' ? limpiarPostgreSQL : limpiarMySQL;
     const titulo = tipo === 'postgres' ? 'PostgreSQL' : 'MySQL';
     const partes = [
         `-- Respaldo Vivero La Palma (${titulo})`,
         `-- Generado: ${fecha}`,
+        '-- Este archivo restaura una copia limpia: elimina y recrea las tablas incluidas.',
         '',
         errores.length ? `-- Avisos: ${errores.map(e => `${e.tabla}: ${e.mensaje}`).join(' | ')}` : '-- Todas las tablas disponibles fueron leidas correctamente',
+        '',
+        limpieza,
         '',
         esquema,
         ''
@@ -169,11 +219,17 @@ const generarSQL = ({ datos, errores }, tipo) => {
         partes.push('');
     }
 
+    if (tipo === 'postgres') {
+        partes.push('-- Ajuste de secuencias despues de insertar IDs explicitos');
+        partes.push(reiniciarSecuenciasPostgreSQL);
+        partes.push('');
+    }
+
     return partes.join('\n');
 };
 
 const nombreArchivo = (extension) => {
-    const fecha = new Date().toISOString().slice(0, 10);
+    const fecha = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     return `respaldo-invernadero-${fecha}.${extension}`;
 };
 

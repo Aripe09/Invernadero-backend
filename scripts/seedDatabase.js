@@ -1,47 +1,103 @@
-const mysql = require('mysql2/promise');
-const fs = require('fs');
-const path = require('path');
+const db = require('../config/db');
 
-const envPath = path.join(__dirname, '..', '.env');
+const schemaMysql = `
+CREATE TABLE IF NOT EXISTS categorias (
+  id_categoria INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL UNIQUE,
+  descripcion TEXT
+);
 
-if (fs.existsSync(envPath)) {
-    const envFile = fs.readFileSync(envPath, 'utf8');
+CREATE TABLE IF NOT EXISTS usuarios (
+  id_usuario INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  rol VARCHAR(50) NOT NULL,
+  activo TINYINT(1) DEFAULT 1
+);
 
-    envFile.split(/\r?\n/).forEach((line) => {
-        const cleanLine = line.trim();
-        if (!cleanLine || cleanLine.startsWith('#')) return;
+CREATE TABLE IF NOT EXISTS productos (
+  id_producto INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(120) NOT NULL UNIQUE,
+  precio DECIMAL(10,2) NOT NULL,
+  stock INT DEFAULT 0,
+  tamano VARCHAR(50),
+  imagen_url TEXT,
+  id_categoria INT,
+  descripcion TEXT
+);
 
-        const separatorIndex = cleanLine.indexOf('=');
-        if (separatorIndex === -1) return;
+CREATE TABLE IF NOT EXISTS ventas (
+  id_venta INT AUTO_INCREMENT PRIMARY KEY,
+  producto_nombre VARCHAR(120) NOT NULL,
+  total DECIMAL(10,2) NOT NULL,
+  vendedor_nombre VARCHAR(100),
+  metodo_pago VARCHAR(50),
+  id_vendedor INT,
+  folio VARCHAR(80) UNIQUE,
+  fecha_venta TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-        const key = cleanLine.slice(0, separatorIndex).trim();
-        const value = cleanLine.slice(separatorIndex + 1).trim();
+CREATE TABLE IF NOT EXISTS detalle_ventas (
+  id_detalle INT AUTO_INCREMENT PRIMARY KEY,
+  id_venta INT,
+  id_producto INT,
+  cantidad INT NOT NULL,
+  precio_unitario DECIMAL(10,2) NOT NULL
+);`;
 
-        if (key && process.env[key] === undefined) {
-            process.env[key] = value;
-        }
-    });
-}
+const schemaPostgres = `
+CREATE TABLE IF NOT EXISTS categorias (
+  id_categoria SERIAL PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL UNIQUE,
+  descripcion TEXT
+);
 
-const config = {
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'invernadero.db',
-    multipleStatements: true
-};
+CREATE TABLE IF NOT EXISTS usuarios (
+  id_usuario SERIAL PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  rol VARCHAR(50) NOT NULL,
+  activo BOOLEAN DEFAULT TRUE
+);
 
-const categorias = [
-    'Interior',
-    'Exterior',
-    'Suculentas',
-    'Macetas y accesorios'
-];
+CREATE TABLE IF NOT EXISTS productos (
+  id_producto SERIAL PRIMARY KEY,
+  nombre VARCHAR(120) NOT NULL UNIQUE,
+  precio NUMERIC(10,2) NOT NULL,
+  stock INTEGER DEFAULT 0,
+  tamano VARCHAR(50),
+  imagen_url TEXT,
+  id_categoria INTEGER,
+  descripcion TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ventas (
+  id_venta SERIAL PRIMARY KEY,
+  producto_nombre VARCHAR(120) NOT NULL,
+  total NUMERIC(10,2) NOT NULL,
+  vendedor_nombre VARCHAR(100),
+  metodo_pago VARCHAR(50),
+  id_vendedor INTEGER,
+  folio VARCHAR(80) UNIQUE,
+  fecha_venta TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS detalle_ventas (
+  id_detalle SERIAL PRIMARY KEY,
+  id_venta INTEGER,
+  id_producto INTEGER,
+  cantidad INTEGER NOT NULL,
+  precio_unitario NUMERIC(10,2) NOT NULL
+);`;
+
+const categorias = ['Interior', 'Exterior', 'Suculentas', 'Macetas y accesorios'];
 
 const usuarios = [
-    ['Administrador', 'admin', '1234', 'administrador', 1],
-    ['Valeria Gomez', 'valeria', '1234', 'empleado', 1],
-    ['Carlos Rivera', 'carlos', '1234', 'empleado', 1]
+    ['Administrador', 'admin', '1234', 'administrador', true],
+    ['Valeria Gomez', 'valeria', '1234', 'empleado', true],
+    ['Carlos Rivera', 'carlos', '1234', 'empleado', true]
 ];
 
 const productos = [
@@ -79,31 +135,29 @@ const detalles = [
     ['LP-2026-0008', 'Rosal mini', 2, 140.00]
 ];
 
-const contar = async (db, tabla) => {
-    const [rows] = await db.query(`SELECT COUNT(*) AS total FROM ${tabla}`);
-    return rows[0].total;
-};
+const q = (sql, params = []) => db.promiseQuery(sql, params);
 
-const insertarSiVacio = async (db, tabla, sql, datos) => {
-    const total = await contar(db, tabla);
+const asegurarEsquema = async () => {
+    const schema = db.isPostgres ? schemaPostgres : schemaMysql;
+    const statements = schema.split(';').map((sql) => sql.trim()).filter(Boolean);
 
-    if (total > 0) {
-        console.log(`${tabla}: ya tenia ${total} registros, no se duplico.`);
-        return total;
+    for (const statement of statements) {
+        await q(statement);
     }
-
-    await db.query(sql, [datos]);
-    console.log(`${tabla}: se insertaron ${datos.length} registros.`);
-    return datos.length;
 };
 
-const asegurarCategorias = async (db) => {
+const contar = async (tabla) => {
+    const rows = await q(`SELECT COUNT(*) AS total FROM ${tabla}`);
+    return Number(rows[0].total);
+};
+
+const asegurarCategorias = async () => {
     let insertados = 0;
 
     for (const nombre of categorias) {
-        const [rows] = await db.query('SELECT id_categoria FROM categorias WHERE nombre = ? LIMIT 1', [nombre]);
+        const rows = await q('SELECT id_categoria FROM categorias WHERE nombre = ? LIMIT 1', [nombre]);
         if (!rows.length) {
-            await db.query('INSERT INTO categorias (nombre) VALUES (?)', [nombre]);
+            await q('INSERT INTO categorias (nombre) VALUES (?)', [nombre]);
             insertados += 1;
         }
     }
@@ -111,15 +165,15 @@ const asegurarCategorias = async (db) => {
     console.log(`categorias: ${insertados} nuevas, ${categorias.length - insertados} ya existian.`);
 };
 
-const asegurarUsuarios = async (db) => {
+const asegurarUsuarios = async () => {
     let insertados = 0;
 
     for (const usuario of usuarios) {
-        const [rows] = await db.query('SELECT id_usuario FROM usuarios WHERE username = ? LIMIT 1', [usuario[1]]);
+        const rows = await q('SELECT id_usuario FROM usuarios WHERE username = ? LIMIT 1', [usuario[1]]);
         if (!rows.length) {
-            await db.query(
+            await q(
                 'INSERT INTO usuarios (nombre, username, password, rol, activo) VALUES (?, ?, ?, ?, ?)',
-                usuario
+                [usuario[0], usuario[1], usuario[2], usuario[3], db.bool(usuario[4])]
             );
             insertados += 1;
         }
@@ -128,16 +182,16 @@ const asegurarUsuarios = async (db) => {
     console.log(`usuarios: ${insertados} nuevos, ${usuarios.length - insertados} ya existian.`);
 };
 
-const asegurarProductos = async (db) => {
+const asegurarProductos = async () => {
     let insertados = 0;
 
     for (const producto of productos) {
-        const [rows] = await db.query('SELECT id_producto FROM productos WHERE nombre = ? LIMIT 1', [producto[0]]);
+        const rows = await q('SELECT id_producto FROM productos WHERE nombre = ? LIMIT 1', [producto[0]]);
         if (!rows.length) {
-            const [categoriaRows] = await db.query('SELECT id_categoria FROM categorias WHERE nombre = ? LIMIT 1', [producto[6]]);
+            const categoriaRows = await q('SELECT id_categoria FROM categorias WHERE nombre = ? LIMIT 1', [producto[6]]);
             const idCategoria = categoriaRows[0]?.id_categoria || null;
 
-            await db.query(
+            await q(
                 'INSERT INTO productos (nombre, descripcion, precio, stock, tamano, imagen_url, id_categoria) VALUES (?, ?, ?, ?, ?, ?, ?)',
                 [producto[0], producto[1], producto[2], producto[3], producto[4], producto[5], idCategoria]
             );
@@ -148,21 +202,21 @@ const asegurarProductos = async (db) => {
     console.log(`productos: ${insertados} nuevos, ${productos.length - insertados} ya existian.`);
 };
 
-const obtenerUsuarioPorUsername = async (db, username) => {
-    const [rows] = await db.query('SELECT id_usuario, nombre FROM usuarios WHERE username = ? LIMIT 1', [username]);
+const obtenerUsuarioPorUsername = async (username) => {
+    const rows = await q('SELECT id_usuario, nombre FROM usuarios WHERE username = ? LIMIT 1', [username]);
     if (rows.length) return rows[0];
 
-    const [admin] = await db.query('SELECT id_usuario, nombre FROM usuarios ORDER BY id_usuario LIMIT 1');
+    const admin = await q('SELECT id_usuario, nombre FROM usuarios ORDER BY id_usuario LIMIT 1');
     return admin[0];
 };
 
-const obtenerProductoPorNombre = async (db, nombre) => {
-    const [rows] = await db.query('SELECT id_producto FROM productos WHERE nombre = ? LIMIT 1', [nombre]);
+const obtenerProductoPorNombre = async (nombre) => {
+    const rows = await q('SELECT id_producto FROM productos WHERE nombre = ? LIMIT 1', [nombre]);
     return rows[0];
 };
 
-const asegurarVentas = async (db) => {
-    const total = await contar(db, 'ventas');
+const asegurarVentas = async () => {
+    const total = await contar('ventas');
 
     if (total > 0) {
         console.log(`ventas: ya tenia ${total} registros, no se duplico.`);
@@ -170,8 +224,8 @@ const asegurarVentas = async (db) => {
     }
 
     for (const venta of ventas) {
-        const vendedor = await obtenerUsuarioPorUsername(db, venta[2]);
-        await db.query(
+        const vendedor = await obtenerUsuarioPorUsername(venta[2]);
+        await q(
             'INSERT INTO ventas (producto_nombre, total, vendedor_nombre, metodo_pago, id_vendedor, folio, fecha_venta) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [venta[0], venta[1], vendedor.nombre, venta[3], vendedor.id_usuario, venta[4], venta[5]]
         );
@@ -180,61 +234,57 @@ const asegurarVentas = async (db) => {
     console.log(`ventas: se insertaron ${ventas.length} registros.`);
 };
 
-const asegurarDetalles = async (db) => {
-    const total = await contar(db, 'detalle_ventas');
+const asegurarDetalles = async () => {
+    const total = await contar('detalle_ventas');
 
     if (total > 0) {
         console.log(`detalle_ventas: ya tenia ${total} registros, no se duplico.`);
         return;
     }
 
+    let insertados = 0;
+
     for (const detalle of detalles) {
-        const [ventaRows] = await db.query('SELECT id_venta FROM ventas WHERE folio = ? LIMIT 1', [detalle[0]]);
-        const producto = await obtenerProductoPorNombre(db, detalle[1]);
+        const ventaRows = await q('SELECT id_venta FROM ventas WHERE folio = ? LIMIT 1', [detalle[0]]);
+        const producto = await obtenerProductoPorNombre(detalle[1]);
 
         if (ventaRows.length && producto) {
-            await db.query(
+            await q(
                 'INSERT INTO detalle_ventas (id_venta, id_producto, cantidad, precio_unitario) VALUES (?, ?, ?, ?)',
                 [ventaRows[0].id_venta, producto.id_producto, detalle[2], detalle[3]]
             );
+            insertados += 1;
         }
     }
 
-    console.log(`detalle_ventas: se insertaron ${detalles.length} registros.`);
+    console.log(`detalle_ventas: se insertaron ${insertados} registros.`);
 };
 
 const main = async () => {
-    const db = await mysql.createConnection(config);
+    await asegurarEsquema();
+    await asegurarCategorias();
+    await asegurarUsuarios();
+    await asegurarProductos();
+    await asegurarVentas();
+    await asegurarDetalles();
 
-    try {
-        await db.beginTransaction();
+    const resumen = await q(`
+        SELECT 'categorias' AS tabla, COUNT(*) AS total FROM categorias
+        UNION ALL SELECT 'usuarios', COUNT(*) FROM usuarios
+        UNION ALL SELECT 'productos', COUNT(*) FROM productos
+        UNION ALL SELECT 'ventas', COUNT(*) FROM ventas
+        UNION ALL SELECT 'detalle_ventas', COUNT(*) FROM detalle_ventas
+    `);
 
-        await asegurarCategorias(db);
-        await asegurarUsuarios(db);
-        await asegurarProductos(db);
-        await asegurarVentas(db);
-        await asegurarDetalles(db);
-
-        await db.commit();
-
-        const [resumen] = await db.query(`
-            SELECT 'categorias' AS tabla, COUNT(*) AS total FROM categorias
-            UNION ALL SELECT 'usuarios', COUNT(*) FROM usuarios
-            UNION ALL SELECT 'productos', COUNT(*) FROM productos
-            UNION ALL SELECT 'ventas', COUNT(*) FROM ventas
-            UNION ALL SELECT 'detalle_ventas', COUNT(*) FROM detalle_ventas
-        `);
-
-        console.table(resumen);
-    } catch (err) {
-        await db.rollback();
-        throw err;
-    } finally {
-        await db.end();
-    }
+    console.table(resumen);
 };
 
-main().catch((err) => {
-    console.error('No se pudo rellenar la base de datos:', err.message);
-    process.exit(1);
-});
+main()
+    .catch((err) => {
+        console.error('No se pudo preparar la base de datos:', err.message);
+        process.exitCode = 1;
+    })
+    .finally(async () => {
+        if (db.isPostgres) await db.client.end();
+        else db.client.end();
+    });

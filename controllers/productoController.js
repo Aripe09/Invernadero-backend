@@ -16,7 +16,9 @@ const getProductos = (req, res) => {
 const agregarProducto = (req, res) => {
     const { nombre, precio, stock, tamano } = req.body;
     const imagen_url = req.file ? `${PUBLIC_URL}/uploads/${req.file.filename}` : null;
-    const sql = 'INSERT INTO productos (nombre, precio, stock, tamano, imagen_url, id_categoria, descripcion) VALUES (?, ?, ?, ?, ?, 1, "Sin descripción")';
+    const sql = db.isPostgres
+        ? "INSERT INTO productos (nombre, precio, stock, tamano, imagen_url, id_categoria, descripcion) VALUES (?, ?, ?, ?, ?, 1, 'Sin descripcion')"
+        : 'INSERT INTO productos (nombre, precio, stock, tamano, imagen_url, id_categoria, descripcion) VALUES (?, ?, ?, ?, ?, 1, "Sin descripción")';
     db.query(sql, [nombre, precio, stock || 0, tamano || 'Mediano', imagen_url], (err) => {
         if (err) return res.status(500).json({ error: err.sqlMessage });
         res.json({ mensaje: "Guardado" });
@@ -97,20 +99,23 @@ const editarProducto = (req, res) => {
 
 // Agregar producto rápido (sin imagen, stock en 0)
 const agregarProductoRapido = (req, res) => {
-    const { nombre, precio, tamano } = req.body;
+    const { nombre, precio, tamano, stock } = req.body;
+    const stockInicial = Number(stock) > 0 ? Number(stock) : 0;
     
     console.log("Agregando producto rápido:", { nombre, precio, tamano });
     
-    const sql = 'INSERT INTO productos (nombre, precio, stock, tamano, imagen_url, id_categoria, descripcion) VALUES (?, ?, 0, ?, NULL, 1, "Producto agregado por venta rápida - Añadir imagen y stock después")';
+    const sql = db.isPostgres
+        ? "INSERT INTO productos (nombre, precio, stock, tamano, imagen_url, id_categoria, descripcion) VALUES (?, ?, ?, ?, NULL, 1, 'Producto agregado por venta rapida - Anadir imagen y stock despues') RETURNING id_producto"
+        : 'INSERT INTO productos (nombre, precio, stock, tamano, imagen_url, id_categoria, descripcion) VALUES (?, ?, ?, ?, NULL, 1, "Producto agregado por venta rapida - Anadir imagen y stock despues")';
     
-    db.query(sql, [nombre, precio, tamano || 'Mediano'], (err, result) => {
+    db.query(sql, [nombre, precio, stockInicial, tamano || 'Mediano'], (err, result) => {
         if (err) {
             console.error("Error al agregar producto rápido:", err);
             return res.status(500).json({ error: err.sqlMessage });
         }
         res.json({ 
             mensaje: "Producto agregado al inventario. Recuerda añadir imagen y stock.",
-            id_producto: result.insertId
+            id_producto: result.insertId || result[0]?.id_producto
         });
     });
 };
