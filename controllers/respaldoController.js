@@ -1,13 +1,15 @@
 const db = require('../config/db');
 
-const TABLAS_RESPALDO = ['categorias', 'usuarios', 'productos', 'ventas', 'detalle_ventas'];
+const TABLAS_RESPALDO = ['categorias', 'usuarios', 'clientes', 'productos', 'ventas', 'detalle_ventas'];
 const COLUMNAS_BOOLEANAS = {
-    usuarios: ['activo']
+    usuarios: ['activo'],
+    clientes: ['activo']
 };
 
 const LLAVES_PRIMARIAS = {
     categorias: 'id_categoria',
     usuarios: 'id_usuario',
+    clientes: 'id_cliente',
     productos: 'id_producto',
     ventas: 'id_venta',
     detalle_ventas: 'id_detalle'
@@ -26,6 +28,16 @@ CREATE TABLE IF NOT EXISTS usuarios (
   password VARCHAR(255) NOT NULL,
   rol VARCHAR(50) NOT NULL,
   activo TINYINT(1) DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS clientes (
+  id_cliente INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(80) NOT NULL,
+  telefono VARCHAR(20),
+  correo VARCHAR(120),
+  direccion VARCHAR(180),
+  activo TINYINT(1) DEFAULT 1,
+  fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS productos (
@@ -63,6 +75,7 @@ const limpiarMySQL = `SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS detalle_ventas;
 DROP TABLE IF EXISTS ventas;
 DROP TABLE IF EXISTS productos;
+DROP TABLE IF EXISTS clientes;
 DROP TABLE IF EXISTS usuarios;
 DROP TABLE IF EXISTS categorias;
 SET FOREIGN_KEY_CHECKS = 1;`;
@@ -80,6 +93,16 @@ CREATE TABLE IF NOT EXISTS usuarios (
   password VARCHAR(255) NOT NULL,
   rol VARCHAR(50) NOT NULL,
   activo BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS clientes (
+  id_cliente SERIAL PRIMARY KEY,
+  nombre VARCHAR(80) NOT NULL,
+  telefono VARCHAR(20),
+  correo VARCHAR(120),
+  direccion VARCHAR(180),
+  activo BOOLEAN DEFAULT TRUE,
+  fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS productos (
@@ -116,11 +139,13 @@ CREATE TABLE IF NOT EXISTS detalle_ventas (
 const limpiarPostgreSQL = `DROP TABLE IF EXISTS detalle_ventas CASCADE;
 DROP TABLE IF EXISTS ventas CASCADE;
 DROP TABLE IF EXISTS productos CASCADE;
+DROP TABLE IF EXISTS clientes CASCADE;
 DROP TABLE IF EXISTS usuarios CASCADE;
 DROP TABLE IF EXISTS categorias CASCADE;`;
 
 const reiniciarSecuenciasPostgreSQL = `SELECT setval(pg_get_serial_sequence('categorias', 'id_categoria'), COALESCE((SELECT MAX(id_categoria) FROM categorias), 1), true);
 SELECT setval(pg_get_serial_sequence('usuarios', 'id_usuario'), COALESCE((SELECT MAX(id_usuario) FROM usuarios), 1), true);
+SELECT setval(pg_get_serial_sequence('clientes', 'id_cliente'), COALESCE((SELECT MAX(id_cliente) FROM clientes), 1), true);
 SELECT setval(pg_get_serial_sequence('productos', 'id_producto'), COALESCE((SELECT MAX(id_producto) FROM productos), 1), true);
 SELECT setval(pg_get_serial_sequence('ventas', 'id_venta'), COALESCE((SELECT MAX(id_venta) FROM ventas), 1), true);
 SELECT setval(pg_get_serial_sequence('detalle_ventas', 'id_detalle'), COALESCE((SELECT MAX(id_detalle) FROM detalle_ventas), 1), true);`;

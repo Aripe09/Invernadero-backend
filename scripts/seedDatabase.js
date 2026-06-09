@@ -16,6 +16,16 @@ CREATE TABLE IF NOT EXISTS usuarios (
   activo TINYINT(1) DEFAULT 1
 );
 
+CREATE TABLE IF NOT EXISTS clientes (
+  id_cliente INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(80) NOT NULL,
+  telefono VARCHAR(20),
+  correo VARCHAR(120),
+  direccion VARCHAR(180),
+  activo TINYINT(1) DEFAULT 1,
+  fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS productos (
   id_producto INT AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL UNIQUE,
@@ -62,6 +72,16 @@ CREATE TABLE IF NOT EXISTS usuarios (
   activo BOOLEAN DEFAULT TRUE
 );
 
+CREATE TABLE IF NOT EXISTS clientes (
+  id_cliente SERIAL PRIMARY KEY,
+  nombre VARCHAR(80) NOT NULL,
+  telefono VARCHAR(20),
+  correo VARCHAR(120),
+  direccion VARCHAR(180),
+  activo BOOLEAN DEFAULT TRUE,
+  fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS productos (
   id_producto SERIAL PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL UNIQUE,
@@ -98,6 +118,12 @@ const usuarios = [
     ['Administrador', 'admin', '1234', 'administrador', true],
     ['Valeria Gomez', 'valeria', '1234', 'empleado', true],
     ['Carlos Rivera', 'carlos', '1234', 'empleado', true]
+];
+
+const clientes = [
+    ['Mostrador', null, null, 'Venta general'],
+    ['Maria Lopez', '6671234567', 'maria.lopez@example.com', 'Culiacan, Sinaloa'],
+    ['Jardin Las Palmas', '6677654321', 'compras@jardinlaspalmas.com', 'Av. Principal 120']
 ];
 
 const productos = [
@@ -182,6 +208,23 @@ const asegurarUsuarios = async () => {
     console.log(`usuarios: ${insertados} nuevos, ${usuarios.length - insertados} ya existian.`);
 };
 
+const asegurarClientes = async () => {
+    let insertados = 0;
+
+    for (const cliente of clientes) {
+        const rows = await q('SELECT id_cliente FROM clientes WHERE nombre = ? LIMIT 1', [cliente[0]]);
+        if (!rows.length) {
+            await q(
+                'INSERT INTO clientes (nombre, telefono, correo, direccion, activo) VALUES (?, ?, ?, ?, ?)',
+                [cliente[0], cliente[1], cliente[2], cliente[3], db.bool(true)]
+            );
+            insertados += 1;
+        }
+    }
+
+    console.log(`clientes: ${insertados} nuevos, ${clientes.length - insertados} ya existian.`);
+};
+
 const asegurarProductos = async () => {
     let insertados = 0;
 
@@ -264,6 +307,7 @@ const main = async () => {
     await asegurarEsquema();
     await asegurarCategorias();
     await asegurarUsuarios();
+    await asegurarClientes();
     await asegurarProductos();
     await asegurarVentas();
     await asegurarDetalles();
@@ -271,6 +315,7 @@ const main = async () => {
     const resumen = await q(`
         SELECT 'categorias' AS tabla, COUNT(*) AS total FROM categorias
         UNION ALL SELECT 'usuarios', COUNT(*) FROM usuarios
+        UNION ALL SELECT 'clientes', COUNT(*) FROM clientes
         UNION ALL SELECT 'productos', COUNT(*) FROM productos
         UNION ALL SELECT 'ventas', COUNT(*) FROM ventas
         UNION ALL SELECT 'detalle_ventas', COUNT(*) FROM detalle_ventas
